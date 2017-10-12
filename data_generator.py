@@ -88,13 +88,12 @@ def infinitely_generate_random_common_words(count):
             yield word
 
 
-def store_w2v_model(word_count, filename):
+def store_w2v_model(
+    word_count, filename, vector_path='../GoogleNews-vectors-negative300.bin'
+):
     from gensim.models.keyedvectors import KeyedVectors
 
-    model = KeyedVectors.load_word2vec_format(
-        '../GoogleNews-vectors-negative300.bin',
-        binary=True,
-    )
+    model = KeyedVectors.load_word2vec_format(vector_path, binary=True)
 
     words = get_most_common_words(word_count)
     outputs = {}
