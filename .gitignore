@@ -104,3 +104,4 @@ ENV/
 
 *.pickle
 *.npz
+*.csv

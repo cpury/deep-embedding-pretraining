@@ -2,17 +2,18 @@ import itertools
 import random
 import string
 
-import gensim
 import numpy as np
+
+import encoding
 
 
 def raw_word_generator():
-    from nltk.corpus import webtext, reuters, brown
+    from nltk.corpus import webtext, reuters, brown, gutenberg
 
     return (
         w.lower()
         for w in itertools.chain(
-            brown.words(), webtext.words(), reuters.words()
+            brown.words(), webtext.words(), reuters.words(), gutenberg.words(),
         )
         if w.isalnum()
     )
@@ -69,7 +70,7 @@ def infinitely_generate_random_common_words(count):
             yield word
 
 
-def generate_word2vec_file(word_count, filename):
+def store_w2v_model(word_count, filename):
     from gensim.models.keyedvectors import KeyedVectors
 
     model = KeyedVectors.load_word2vec_format(
@@ -87,24 +88,26 @@ def generate_word2vec_file(word_count, filename):
 
         outputs[word] = model[word]
 
-    np.savez_compressed(filename, **outputs)
+    np.savez_compressed(filename, outputs)
 
 
-def load_word2vec_file(filename):
+def load_w2v_model(filename):
     if not filename.endswith('.npz'):
         filename += '.npz'
 
-    return np.load(filename)
+    return np.load(filename)['arr_0'][()]
 
 
 def word2vec_data_generator(
-    w2w_file, char_ranks, max_word_length, batch_size,
+    w2v_model, char_ranks, max_word_length, batch_size,
 ):
-    model = load_word2vec_file(w2w_file)
-    words = model.files
+    if type(w2v_model) is str:
+        w2v_model = load_w2v_model(w2v_model)
+
+    words = list(w2v_model.keys())
 
     n_chars = len(char_ranks)
-    n_embedding_features = len(model[model.files[0]])
+    n_embedding_features = len(w2v_model[words[0]])
 
     batch_i = 0
     batch_x = None
@@ -116,10 +119,20 @@ def word2vec_data_generator(
                 print('Word', word, 'too long')
                 continue
 
-            vector = model[word]
+            vector = w2v_model[word]
 
             # Add typos:
-            for i in range(2):
+            max_n_typos = 2
+            if len(word) <= 1:
+                max_n_typos = 0
+            elif len(word) <= 3:
+                max_n_typos = 1
+            elif len(word) <= 8:
+                max_n_typos = 2
+            else:
+                max_n_typos = 3
+
+            for i in range(max_n_typos):
                 word = add_typo(word, 0.2 / (i + 1))
 
             if batch_x is None:
