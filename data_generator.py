@@ -3,6 +3,7 @@ import random
 import string
 
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 import encoding
 
@@ -98,8 +99,24 @@ def load_w2v_model(filename):
     return np.load(filename)['arr_0'][()]
 
 
+def fit_scaler_on_w2v_data(w2v_model):
+    words = list(w2v_model.keys())
+    n_words = len(words)
+    n_features = len(w2v_model[words[0]])
+    x = np.zeros((n_words, n_features))
+
+    for i, word in enumerate(words):
+        x[i][:] = w2v_model[word]
+
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+
+    scaler.fit(x)
+
+    return scaler
+
+
 def word2vec_data_generator(
-    w2v_model, char_ranks, max_word_length, batch_size,
+    w2v_model, char_ranks, max_word_length, batch_size, scaler=None
 ):
     if type(w2v_model) is str:
         w2v_model = load_w2v_model(w2v_model)
@@ -120,6 +137,9 @@ def word2vec_data_generator(
                 continue
 
             vector = w2v_model[word]
+
+            if scaler:
+                vector = scaler.transform(vector.reshape(1, -1))[0]
 
             # Add typos:
             max_n_typos = 2

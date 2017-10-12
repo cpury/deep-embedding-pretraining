@@ -96,12 +96,16 @@ def train_from_generator(
     return history
 
 
-def test_model(model, char_ranks, w2v_model):
+def test_model(model, char_ranks, w2v_model, scaler=None):
     max_word_length = model.input_shape[1]
     test_words = ['apple', 'dog', 'germany', 'france', 'hey']
 
     for word in test_words:
         target = w2v_model[word]
+
+        if scaler:
+            target = scaler.transform(target.reshape(1, -1))[0]
+
         prediction = model.predict(
             encoding.get_character_features(
                 [word], char_ranks, max_word_length
@@ -122,8 +126,10 @@ def main():
     w2v_model = data_generator.load_w2v_model('10k.npz')
     ranks, inverse_ranks = encoding.load_ranks_from_file('ranks.pickle')
 
+    scaler = data_generator.fit_scaler_on_w2v_data(w2v_model)
+
     generator = data_generator.word2vec_data_generator(
-        w2v_model, ranks, max_word_length, batch_size,
+        w2v_model, ranks, max_word_length, batch_size, scaler=scaler
     )
 
     model = build_model(max_word_length, len(ranks), depth, hidden_size, 300)
@@ -133,7 +139,7 @@ def main():
     print()
 
     print()
-    test_model(model, ranks, w2v_model)
+    test_model(model, ranks, w2v_model, scaler=scaler)
     print()
 
     train_from_generator(
@@ -143,7 +149,7 @@ def main():
     )
 
     print()
-    test_model(model, ranks, w2v_model)
+    test_model(model, ranks, w2v_model, scaler=scaler)
     print()
 
 
