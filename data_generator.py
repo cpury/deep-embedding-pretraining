@@ -20,7 +20,7 @@ def raw_word_generator():
     )
 
 
-def add_typo(word, chance=0.2):
+def add_single_typo(word, chance=0.2):
     if random.random() > chance:
         return word
 
@@ -50,6 +50,23 @@ def add_typo(word, chance=0.2):
     c2 = word[i2]
     word = word[:i1-1] + c2 + word[i1:]
     word = word[:i2-1] + c1 + word[i2:]
+    return word
+
+
+def add_typos(word, chance=0.2):
+    max_n_typos = 2
+    if len(word) <= 1:
+        max_n_typos = 0
+    elif len(word) <= 3:
+        max_n_typos = 1
+    elif len(word) <= 8:
+        max_n_typos = 2
+    else:
+        max_n_typos = 3
+
+    for i in range(max_n_typos):
+        word = add_single_typo(word, chance / (i + 1))
+
     return word
 
 
@@ -99,6 +116,20 @@ def load_w2v_model(filename):
     return np.load(filename)['arr_0'][()]
 
 
+def split_w2v_model(w2v_model, split=0.2):
+    words = list(w2v_model.keys())
+    n_words = len(words)
+
+    i_split = round(n_words * split)
+
+    random.shuffle(words)
+
+    test_words = {w: w2v_model[w] for w in words[:i_split]}
+    train_words = {w: w2v_model[w] for w in words[i_split:]}
+
+    return train_words, test_words
+
+
 def fit_scaler_on_w2v_data(w2v_model):
     words = list(w2v_model.keys())
     n_words = len(words)
@@ -113,6 +144,47 @@ def fit_scaler_on_w2v_data(w2v_model):
     scaler.fit(x)
 
     return scaler
+
+
+def build_word2vec_data(
+    w2v_model, char_ranks, max_word_length, scaler=None, count=None,
+):
+    if type(w2v_model) is str:
+        w2v_model = load_w2v_model(w2v_model)
+
+    words = list(w for w in w2v_model.keys() if len(w) < max_word_length)
+
+    if count:
+        words = words[:count]
+
+    count = len(words)
+
+    n_chars = len(char_ranks)
+    n_embedding_features = len(w2v_model[words[0]])
+
+    x = np.zeros(
+        (len(words), max_word_length, n_chars),
+        dtype='float32'
+    )
+    y = np.zeros(
+        (len(words), n_embedding_features),
+        dtype='float32'
+    )
+
+    for i, word in enumerate(words):
+        vector = w2v_model[word]
+
+        if scaler:
+            vector = scaler.transform(vector.reshape(1, -1))[0]
+
+        word = add_typos(word)
+
+        x[i][:] = encoding.get_character_features(
+            [word], char_ranks, max_word_length
+        )[0]
+        y[i][:] = vector
+
+    return x, y
 
 
 def word2vec_data_generator(
@@ -141,19 +213,7 @@ def word2vec_data_generator(
             if scaler:
                 vector = scaler.transform(vector.reshape(1, -1))[0]
 
-            # Add typos:
-            max_n_typos = 2
-            if len(word) <= 1:
-                max_n_typos = 0
-            elif len(word) <= 3:
-                max_n_typos = 1
-            elif len(word) <= 8:
-                max_n_typos = 2
-            else:
-                max_n_typos = 3
-
-            for i in range(max_n_typos):
-                word = add_typo(word, 0.2 / (i + 1))
+            word = add_typos(word)
 
             if batch_x is None:
                 batch_x = np.zeros(

@@ -64,6 +64,7 @@ def build_model(
 def train_from_generator(
     model,
     training_generator, training_steps_per_epoch,
+    x_test, y_test,
     epochs, batch_size,
     **kwargs
 ):
@@ -76,6 +77,7 @@ def train_from_generator(
             max_queue_size=(2 * batch_size),
             epochs=epochs,
             verbose=2,
+            validation_data=(x_test, y_test),
             callbacks=[
                 EarlyStopping(
                     patience=100,
@@ -96,22 +98,26 @@ def train_from_generator(
     return history
 
 
-def test_model(model, char_ranks, w2v_model, scaler=None):
+def test_model(model, ranks, inverse_ranks, w2v_model, count, scaler=None):
     max_word_length = model.input_shape[1]
-    test_words = ['apple', 'dog', 'germany', 'france', 'hey']
+    x_test, y_test = data_generator.build_word2vec_data(
+        w2v_model, ranks, max_word_length, scaler=scaler, count=count
+    )
 
-    for word in test_words:
-        target = w2v_model[word]
+    n_test_data = len(x_test)
+    count = min(count, n_test_data)
+    indexes = random.sample(range(n_test_data), count)
 
-        if scaler:
-            target = scaler.transform(target.reshape(1, -1))[0]
+    test_rows = x_test[indexes]
+    predictions = model.predict(test_rows)
+    targets = y_test[indexes]
 
-        prediction = model.predict(
-            encoding.get_character_features(
-                [word], char_ranks, max_word_length
-            )
-        )[0]
-        print(word, np.linalg.norm(target - prediction))
+    for i in range(count):
+        print('{}: {} -> {:.8f}'.format(
+            i,
+            encoding.features_to_text(test_rows[i], inverse_ranks),
+            np.linalg.norm(targets[i] - predictions[i]),
+        ))
 
 
 def main():
@@ -124,12 +130,17 @@ def main():
     epochs = 100
 
     w2v_model = data_generator.load_w2v_model('10k.npz')
+    train_w2v_model, test_w2v_model = data_generator.split_w2v_model(w2v_model)
+
     ranks, inverse_ranks = encoding.load_ranks_from_file('ranks.pickle')
 
-    scaler = data_generator.fit_scaler_on_w2v_data(w2v_model)
+    scaler = data_generator.fit_scaler_on_w2v_data(train_w2v_model)
 
     generator = data_generator.word2vec_data_generator(
-        w2v_model, ranks, max_word_length, batch_size, scaler=scaler
+        train_w2v_model, ranks, max_word_length, batch_size, scaler=scaler
+    )
+    x_test, y_test = data_generator.build_word2vec_data(
+        test_w2v_model, ranks, max_word_length, scaler=scaler
     )
 
     model = build_model(max_word_length, len(ranks), depth, hidden_size, 300)
@@ -139,17 +150,18 @@ def main():
     print()
 
     print()
-    test_model(model, ranks, w2v_model, scaler=scaler)
+    test_model(model, ranks, inverse_ranks, test_w2v_model, 10, scaler=scaler)
     print()
 
     train_from_generator(
         model,
         generator, training_steps_per_epoch,
+        x_test, y_test,
         epochs, batch_size,
     )
 
     print()
-    test_model(model, ranks, w2v_model, scaler=scaler)
+    test_model(model, ranks, inverse_ranks, test_w2v_model, 10, scaler=scaler)
     print()
 
 
